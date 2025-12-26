@@ -143,7 +143,7 @@ class TransactionType(Enum):
 
 class PaymentType(Enum):
     CASHBACK = "cashback"
-    SCHEDULED = "default"
+    OUTGOING = "outgoing"
 
 
 MILLISECONDS_IN_1_DAY = 24 * 60 * 60 * 1000
@@ -166,7 +166,7 @@ class Transfer:
 
 class Payment:
     def __init__(
-        self, ts: int, account_id: str, payment_id: str, amount: int, type: PaymentType = PaymentType.SCHEDULED
+        self, ts: int, account_id: str, payment_id: str, amount: int, type: PaymentType | None = PaymentType.OUTGOING
     ) -> None:
         self.ts = ts
         self.payment_id = payment_id
@@ -357,7 +357,7 @@ class Bank:
         self.payment_ordinal += 1
         payment_id = f"payment{self.payment_ordinal}"
         self.scheduled_payments[payment_id] = Payment(
-            parse_str_to_int(ts) + delay, account_id, payment_id, amount, PaymentType.SCHEDULED
+            parse_str_to_int(ts) + delay, account_id, payment_id, amount, PaymentType.OUTGOING
         )
 
         return payment_id
