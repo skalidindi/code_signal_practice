@@ -399,7 +399,7 @@ class Bank:
         for id in parsed_payment_ids:
             del self.scheduled_payments[id]
 
-    def get_top_activity_accounts(self, ts: str, n: int) -> str:
+    def top_activity(self, ts: str, n: int) -> str:
         accts = list(self.accounts.values())
         accts.sort(key=lambda x: x.total_transaction_value, reverse=True)
 
