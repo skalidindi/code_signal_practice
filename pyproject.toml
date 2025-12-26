@@ -1,5 +1,5 @@
 [project]
-name = "lld"
+name = "code_signal_practice"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
@@ -7,10 +7,7 @@ requires-python = ">=3.13"
 dependencies = ["sortedcontainers>=2.4.0"]
 
 [project.optional-dependencies]
-dev = [
-    "mypy>=1.8.0",
-    "ruff>=0.1.0",
-]
+dev = ["mypy>=1.8.0", "ruff>=0.1.0"]
 
 [tool.uv]
 package = true
@@ -31,11 +28,11 @@ target-version = "py313"
 
 [tool.ruff.lint]
 select = [
-    "E",   # pycodestyle errors
-    "W",   # pycodestyle warnings
-    "F",   # pyflakes
-    "I",   # isort
-    "N",   # pep8-naming
-    "UP",  # pyupgrade
-    "B",   # flake8-bugbear
+  "E",  # pycodestyle errors
+  "W",  # pycodestyle warnings
+  "F",  # pyflakes
+  "I",  # isort
+  "N",  # pep8-naming
+  "UP", # pyupgrade
+  "B",  # flake8-bugbear
 ]
