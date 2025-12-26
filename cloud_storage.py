@@ -49,3 +49,137 @@ Note that MERGE_USER does not affect userId's backup, and userid2 is deleted alo
 Note that the RESTORE_USER operation does not affect the user's capacity. Badly worded, test cases show capacity
 increased back when restore deleted all user's files. It actually means the initial capacity not changed.
 """
+
+
+class User:
+    def __init__(self, user_id: str, capacity: int):
+        self.user_id = user_id
+
+        if capacity < 0 and user_id != "admin":
+            raise ValueError("Capacity must be nonnegative")
+        self.max_capacity = capacity
+        self.curr_capacity = capacity
+        self.files: set[str] = set()
+        self.backup: dict[str, File] = {}
+
+
+class File:
+    def __init__(self, name: str, size_bytes: int, user_id: str) -> None:
+        self.name = name
+        self.size_bytes = size_bytes
+        self.user_id = user_id
+
+
+class CloudStorage:
+    def __init__(self) -> None:
+        self.storage: dict[str, File] = {}
+        self.users: dict[str, User] = {}
+        self.users["admin"] = User("admin", -1)
+
+    def _is_admin_user(self, user_id: str) -> bool:
+        return user_id == "admin"
+
+    def add_file(self, name: str, size: int) -> bool:
+        res = self.add_file_by("admin", name, size)
+        return True if res else False
+
+    def get_file_size(self, name: str) -> str:
+        if name not in self.storage:
+            return ""
+
+        f = self.storage[name]
+        return str(f.size_bytes)
+
+    def delete_file(self, name: str) -> str:
+        if name not in self.storage:
+            return ""
+
+        f = self.storage[name]
+        res = self.get_file_size(name)
+        if f.user_id in self.users:
+            user = self.users[f.user_id]
+            user.curr_capacity += f.size_bytes
+            user.files.remove(name)
+
+        del self.storage[name]
+        return res
+
+    def get_n_largest(self, prefix: str, n: int) -> str:
+        matching_files = [f for f in self.storage.values() if f.name.startswith(prefix)]
+        files_by_size = sorted(matching_files, key=lambda x: (-x.size_bytes, x.name))
+        n_largest = files_by_size[:n]
+
+        return ", ".join(f"{file.name}({file.size_bytes})" for file in n_largest)
+
+    def add_user(self, user_id: str, capacity: int) -> bool:
+        if user_id in self.users:
+            return False
+
+        self.users[user_id] = User(user_id, capacity)
+        return True
+
+    def add_file_by(self, user_id: str, name: str, size: int) -> str:
+        if user_id not in self.users or name in self.storage:
+            return ""
+
+        user = self.users[user_id]
+        if not self._is_admin_user(user_id) and user.curr_capacity - size < 0:
+            return ""
+
+        f = File(name, size, user_id)
+        user.files.add(name)
+        self.storage[name] = f
+        user.curr_capacity -= size
+
+        return str(user.curr_capacity)
+
+    def merge_user(self, user_id_1: str, user_id_2: str) -> str:
+        if user_id_1 == user_id_2 or user_id_1 not in self.users or user_id_2 not in self.users:
+            return ""
+
+        user_1 = self.users[user_id_1]
+        user_2 = self.users[user_id_2]
+
+        user_1.max_capacity += user_2.max_capacity
+        user_1.curr_capacity += user_2.curr_capacity
+        user_1.files.update(user_2.files)
+
+        for file_name in user_2.files:
+            self.storage[file_name].user_id = user_id_1
+        del self.users[user_id_2]
+
+        return str(user_1.curr_capacity)
+
+    def backup_user(self, user_id: str) -> str:
+        if user_id not in self.users:
+            return ""
+
+        user = self.users[user_id]
+        backup: dict[str, File] = {}
+        for file_name in user.files:
+            f = self.storage[file_name]
+            backup[file_name] = File(f.name, f.size_bytes, f.user_id)
+
+        user.backup = backup
+        return str(len(user.files))
+
+    def restore_user(self, user_id: str) -> str:
+        if user_id not in self.users:
+            return ""
+
+        num_successful_restores = 0
+        user = self.users[user_id]
+        for file_name in list(user.files):
+            self.delete_file(file_name)
+
+        if user.backup:
+            for file_name, f in user.backup.items():
+                if (
+                    file_name in self.storage and self.storage[file_name].user_id == user_id
+                ) or file_name not in self.storage:
+                    user.files.add(file_name)
+                    self.storage[file_name] = f
+                    user.curr_capacity -= f.size_bytes
+                    num_successful_restores += 1
+
+        return str(num_successful_restores)
