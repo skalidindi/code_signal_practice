@@ -89,3 +89,139 @@ The database should be backed up from time to time. Introduce operations to supp
 Assumption: delete_at, set_at, set_at_with_ttl, .etc. should not affect existing backups.
 
 """
+
+from copy import deepcopy
+import bisect
+
+
+class Value:
+    def __init__(self, ts: int, value: int, ttl: int | None = None) -> None:
+        self.ts = ts
+        self.value = value
+        self.ttl = ttl
+
+    def is_expired(self, timestamp: int) -> bool:
+        return self.ttl is not None and self.ttl + self.ts <= timestamp
+
+
+class Record:
+    def __init__(self) -> None:
+        self.data: dict[str, Value] = {}
+
+
+class InMemoryDB:
+    def __init__(self) -> None:
+        self.records: dict[str, Record] = {}
+        self.backups: dict[int, dict[str, Record]] = dict()
+
+    def set(self, timestamp: int, key: str, field: str, value: int) -> None:
+        if key not in self.records:
+            self.records[key] = Record()
+
+        self.records[key].data[field] = Value(ts=timestamp, value=value)
+
+    def get(self, timestamp: int, key: str, field: str) -> int | None:
+        if key not in self.records:
+            return None
+
+        if field not in self.records[key].data:
+            return None
+
+        value_obj = self.records[key].data[field]
+        if value_obj.is_expired(timestamp):
+            return None
+
+        return value_obj.value
+
+    def compare_and_set(self, timestamp: int, key: str, field: str, expected_value: int, new_value: int) -> bool:
+        curr_val = self.get(timestamp, key, field)
+
+        if curr_val is not None and curr_val == expected_value:
+            self.set(timestamp, key, field, new_value)
+            return True
+
+        return False
+
+    def compare_and_delete(self, timestamp: int, key: str, field: str, expected_value: int) -> bool:
+        curr_val = self.get(timestamp, key, field)
+
+        if curr_val is not None and curr_val == expected_value:
+            del self.records[key].data[field]
+            return True
+
+        return False
+
+    def scan(self, timestamp: int, key: str) -> list[str]:
+        if key not in self.records:
+            return []
+
+        fields = self.records[key].data
+        field_keys = sorted(fields.keys())
+
+        return list(f"{k}({fields[k].value})" for k in field_keys if not fields[k].is_expired(timestamp))
+
+    def scan_by_prefix(self, timestamp: int, key: str, prefix: str) -> list[str]:
+        if key not in self.records:
+            return []
+
+        fields = self.records[key].data
+        field_keys = sorted(fields.keys())
+
+        return list(
+            f"{k}({fields[k].value})"
+            for k in field_keys
+            if k.startswith(prefix) and not fields[k].is_expired(timestamp)
+        )
+
+    def set_with_ttl(self, timestamp: int, key: str, field: str, value: int, ttl: int) -> None:
+        if key not in self.records:
+            self.records[key] = Record()
+
+        self.records[key].data[field] = Value(ts=timestamp, value=value, ttl=ttl)
+
+    def compare_and_set_with_ttl(
+        self, timestamp: int, key: str, field: str, expected_value: int, new_value: int, ttl: int
+    ) -> bool:
+        curr_val = self.get(timestamp, key, field)
+
+        if curr_val is not None and curr_val == expected_value:
+            self.set_with_ttl(timestamp, key, field, new_value, ttl)
+            return True
+
+        return False
+
+    def backup(self, timestamp: int) -> str:
+        count = 0
+        records_copy = deepcopy(self.records)
+
+        for r in records_copy.values():
+            has_valid_field = False
+            for v in r.data.values():
+                if not v.is_expired(timestamp):
+                    has_valid_field = True
+                    v.ts = timestamp
+                    if v.ttl is not None:
+                        v.ttl -= timestamp - v.ts
+
+            if has_valid_field:
+                count += 1
+
+        self.backups[timestamp] = records_copy
+        return str(count)
+
+    def restore(self, timestamp: int, timestamp_to_restore: int) -> None:
+        timestamp_keys = sorted(self.backups.keys())
+
+        idx = bisect.bisect_right(timestamp_keys, timestamp_to_restore) - 1
+        if idx >= 0:
+            ts_to_use = timestamp_keys[idx]
+
+            backup_to_use = deepcopy(self.backups[ts_to_use])
+
+            for field in backup_to_use.values():
+                for v in field.data.values():
+                    if v.ttl is not None:
+                        v.ttl -= timestamp - ts_to_use
+                    v.ts = timestamp
+
+            self.records = backup_to_use
